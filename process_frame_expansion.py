@@ -29,7 +29,7 @@ if __name__ == "__main__":
     args = argv[1:]
     # print(args)
     for arg in args:
-        dataset_name = arg.strip('.\\').replace('.json', '')
+        dataset_name = arg.strip('.\\').removesuffix('.json')
         print("Analyzing file: %s" % dataset_name)
         results = read_results_file(arg)
         step_dist = results['metadata']['z_axis']['step_dist']
@@ -53,46 +53,55 @@ if __name__ == "__main__":
         temp_data_sd['delta_z'] = temp_data_sd['mcu_z']\
             .transform(lambda x: np.sqrt(x**2 + x.iloc[0]**2)*step_dist)
 
-        filtered_mean = temp_data_mean[(temp_data_sd['mcu_z'] < 2)
-            & (temp_data_mean['bed_target'] > 0)
+        filtered_mean = temp_data_mean[(temp_data_sd['mcu_z'] < 2) 
             & (temp_data_mean['frame_temp'] < temp_data_mean['frame_temp'].max()-0.3)]
 
 
         filter_mean_print = filtered_mean.loc[filtered_mean['elapsed_min'] > PRINT_START_TIME]
-        m, c = np.polyfit(filter_mean_print['frame_temp'],
-                          filter_mean_print['delta_z'], 
-                          1)
 
-        filter_mean_print['fit_z'] = np.polyval([m, c], filter_mean_print['frame_temp'])
+        try:
+            m, c = np.polyfit(filter_mean_print['frame_temp'],
+                            filter_mean_print['delta_z'], 
+                            1)
+        except TypeError:
+            print("WARNING: Filtered data produces unfittable results\nPlotting & fitting unfiltered mean data points.")
+            mean_print = temp_data_mean
+            m, c = np.polyfit(temp_data_mean['frame_temp'],
+                            temp_data_mean['delta_z'], 
+                            1)
 
-        plt.figure(1, (6,6))
-        plt.scatter('delta_z', 'frame_temp', c='frame_temp',  cmap='inferno', data=filter_mean_print)
-        plt.axline((filter_mean_print['fit_z'].min(),
-                    filter_mean_print['frame_temp'].max()
-                    ),
-                    slope=1/m,
-                    linestyle="--",
-                    c='black')
-        plt.title('%s\nFrame Expansion\nTemperature Coefficient Fitting' %
-            dataset_name)
-        plt.xlabel('Delta Z [mm]')
-        plt.ylabel('Frame Temperature [degC]')
-        plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*m), xy=(0.6,0.8), xycoords='figure fraction')
-        plt.savefig('%stemp_coeff_fitting.png' % output_path)
-        plt.close()
+            mean_print['fit_z'] = np.polyval([m, c], mean_print['frame_temp'])
 
-        plt.figure(2)
-        plt.title('Frame Expansion Timeseries\n%s' % dataset_name)
-        plt.plot('elapsed_min', 'delta_z', c='black', data=temp_data_mean)
-        # plt.scatter('elapsed_min', 'delta_z', c='frame_temp', cmap='inferno', data=temp_data_mean)
-        plt.xlabel('Elapsed Time [min]')
-        plt.ylabel('Delta Z [mm]')
-        # plt.legend(['Delta Z'])
-        ax2 = plt.twinx()
-        ax2.set_ylabel('Temperature [degC]')
-        ax2.plot('elapsed_min', 'frame_temp', data=temp_data_mean, label='Frame')
-        if 'chamber_temp' in temp_data_mean.columns:
-            ax2.plot('elapsed_min', 'chamber_temp', data=temp_data_mean, label='Chamber')
-            ax2.legend(title='Temperatures', bbox_to_anchor=(1.1,0.5), loc=2)
-        plt.savefig('%stemp_timeseries.png' % output_path, bbox_inches='tight')
-        plt.close()
+            plt.figure(1, (6,6))
+            plt.scatter('delta_z', 'frame_temp', c='frame_temp',  cmap='inferno', data=mean_print)
+            plt.axline((mean_print['fit_z'].min(),
+                        mean_print['frame_temp'].max()
+                        ),
+                        slope=1/m,
+                        linestyle="--",
+                        c='black')
+            plt.title('%s\nFrame Expansion\nTemperature Coefficient Fitting' %
+                dataset_name)
+            plt.xlabel('Delta Z [mm]')
+            plt.ylabel('Frame Temperature [degC]')
+            plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*m), xy=(0.6,0.8), xycoords='figure fraction')
+            plt.savefig('%stemp_coeff_fitting_unfiltered.png' % output_path)
+            plt.close()
+        else:
+            filter_mean_print['fit_z'] = np.polyval([m, c], filter_mean_print['frame_temp'])
+
+            plt.figure(1, (6,6))
+            plt.scatter('delta_z', 'frame_temp', c='frame_temp',  cmap='inferno', data=filter_mean_print)
+            plt.axline((filter_mean_print['fit_z'].min(),
+                        filter_mean_print['frame_temp'].max()
+                        ),
+                        slope=1/m,
+                        linestyle="--",
+                        c='black')
+            plt.title('%s\nFrame Expansion\nTemperature Coefficient Fitting' %
+                dataset_name)
+            plt.xlabel('Delta Z [mm]')
+            plt.ylabel('Frame Temperature [degC]')
+            plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*m), xy=(0.6,0.8), xycoords='figure fraction')
+            plt.savefig('%stemp_coeff_fitting.png' % output_path)
+            plt.close()

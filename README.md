@@ -17,7 +17,7 @@ You'll need to edit the script (please use a vanilla text editer, such as Nano, 
 
 ```
 ######### META DATA #################
-# For data collection organizational purposes
+# For data collection organizational purposes only. Useful when sharing dataset.
 USER_ID = ''            # e.g. Discord handle
 PRINTER_MODEL = ''      # e.g. 'voron_v2_350'
 HOME_TYPE = ''          # e.g. 'nozzle_pin', 'microswitch_probe', etc.
@@ -29,31 +29,51 @@ NOTES = ''              # anything note-worthy about this particular run,
 #####################################
 
 ######### CONFIGURATION #############
-BASE_URL = 'http://127.0.0.1'       # printer URL (e.g. http://192.168.1.15)
-                                    # leave default if running locally
-BED_TEMPERATURE = 105               # bed temperature for measurements
-HE_TEMPERATURE = 100                # extruder temperature for measurements
-MEASURE_INTERVAL = 1                # minutes between repeated homing measures
-N_SAMPLES = 3                       # number of repeated homing measures
+BASE_URL = 'http://127.0.0.1:7125'  # Printer URL (e.g. http://192.168.1.15)
+                                    # leave default if running locally on Pi.
+
+BED_TEMPERATURE = 105               # Bed target temperature for measurements.
+
+HE_TEMPERATURE = 100                # Extruder temperature for measurements.
+
+MEASURE_INTERVAL = 1                # Interval between Z measurements [minutes]
+
+N_SAMPLES = 3                       # Number of repeated measurements of Z
+                                    # taken at each MEASURE_INTERVAL.
+
 HOT_DURATION = 3                    # time after bed temp reached to continue
-                                    # measuring, in hours
-COOL_DURATION = 0                   # hours to continue measuring after heaters
-                                    # are disabled
-SOAK_TIME = 5                       # minutes to wait for bed to heatsoak after reaching temp
-MEASURE_GCODE = 'G28 Z'             # G-code called on repeated measurements, single line/macro only
-QGL_CMD = "QUAD_GANTRY_LEVEL"       # command for QGL; e.g. "QUAD_GANTRY_LEVEL" or None if no QGL.
-MESH_CMD = "BED_MESH_CALIBRATE"
+                                    # measuring [hours]
 
-# Full config section name of the frame temperature sensor
-FRAME_SENSOR = "temperature_sensor frame"
-# chamber thermistor config name. Change to match your own, or "" if none
-# will also work with temperature_fan configs
-CHAMBER_SENSOR = "temperature_sensor chamber"
-# Extra temperature sensors to collect. Use same format as above but seperate
-# quoted names with commas (if more than one).
-EXTRA_SENSORS = {"frame1": "temperature_sensor frame1",
-                 "z_switch": "temperature_sensor z_switch"}
+COOL_DURATION = 0                   # Time to continue measuring after heaters
+                                    # are disabled [hours].
 
+SOAK_TIME = 5                       # Time to wait for bed to heatsoak after
+                                    # reaching BED_TEMPERATURE [minutes].
+
+MEASURE_GCODE = 'G28 Z'             # G-code called on repeated Z measurements,
+                                    # single line command or macro only.
+
+TRAMMING_METHOD = "quad_gantry_level" # One of: "quad_gantry_level", "z_tilt", or None
+
+TRAMMING_CMD = "QUAD_GANTRY_LEVEL"  # Command for QGL/Z-tilt adjustments.
+                                    # e.g. "QUAD_GANTRY_LEVEL", "Z_TILT_ADJUST",
+                                    # "CUSTOM_MACRO", or None.
+
+MESH_CMD = "BED_MESH_CALIBRATE"     # Command to measure bed mesh for gantry/bed
+                                    # bowing/deformation measurements.
+
+# If using the Z_THERMAL_ADJUST module. [True/False]
+Z_THERMAL_ADJUST = True
+
+# Full config section name of the frame temperature sensor (if any). E.g:
+# CHAMBER_SENSOR = "temperature_sensor chamber"
+CHAMBER_SENSOR = None
+
+# Extra temperature sensors to collect. E.g:
+# EXTRA_SENSORS = {"ambient": "temperature_sensor ambient",
+#                  "mug1": "temperature_sensor coffee"}
+# can be left empty if none to define.
+EXTRA_SENSORS = {}
 #####################################
 ```
 
