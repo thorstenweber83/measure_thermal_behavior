@@ -517,8 +517,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        # main()
-        print(query_temp_sensors())
+        main()
     except KeyboardInterrupt:
         set_bedtemp()
         set_hetemp()
