@@ -205,7 +205,7 @@ def park_head_high():
     xpark = xmax
     ypark = ymax
     zpark = zmax * 0.8
-
+    print(f"Parking toolhead at Z={zpark:.1f}mm for bed heating...", end='', flush=True)
     park_cmd = "G1 X%.1f Y%.1f Z%.1f F1000" % (xpark, ypark, zpark)
     send_gcode_nowait(park_cmd)
 
@@ -241,11 +241,11 @@ def tram(retries=30):
         print("Gantry/bed already trammed. ")
         return True
     if not gantry_leveled():
-        print("Tramming gantry/bed...", end='')
+        print("Tramming gantry/bed...", end='', flush=True)
         send_gcode_nowait(TRAMMING_CMD)
         for attempt in range(retries):
             if gantry_leveled():
-                print("DONE!")
+                print("DONE", flush=True)
                 return True
             else:
                 print(".", end='')
@@ -264,11 +264,8 @@ def clear_bed_mesh():
 def take_bed_mesh():
     mesh_received = False
     cmd = MESH_CMD
-
     send_gcode_nowait(cmd)
-
     mesh = query_bed_mesh()
-
     return(mesh)
 
 
@@ -276,12 +273,12 @@ def query_bed_mesh(retries=60):
     url = BASE_URL + '/printer/objects/query?bed_mesh'
     mesh_received = False
     for attempt in range(retries):
-        print('.', end='', flush=True)
+        # print('.', end='', flush=True)
         resp = get(url).json()['result']
         mesh = resp['status']['bed_mesh']
         if mesh['mesh_matrix'] != [[]]:
             mesh_received = True
-            print('DONE!', flush=True)
+            # print('DONE!', flush=True)
             return mesh
         else:
             sleep(10)
@@ -348,15 +345,19 @@ def query_mcu_z_pos():
     return None
 
 
-def wait_for_bedtemp(soak_time=5):
-    print('Heating started')
-    while(1):
+def heatsoak_bed():
+    print(f"Waiting for bed to reach {BED_TEMPERATURE:.1f} degC...", end='', flush=True)
+    temps = query_temp_sensors()
+    while(temps['bed_temp'] < BED_TEMPERATURE-0.5):
         temps = query_temp_sensors()
-        if temps['bed_temp'] >= BED_TEMPERATURE-0.5:
-            print("Reached temp, heat soaking bed...", end='', flush=True)
-            sleep(soak_time*60)
-            break
-    print('\nBed temp reached!', flush=True)
+        sleep(1)
+    print("DONE", flush=True)
+    start_soak = datetime.now()
+    while(datetime.now() - start_soak < timedelta(minutes=SOAK_TIME)):
+        remaining = SOAK_TIME*60 - (datetime.now() - start_soak).seconds
+        print(f"Heatsoaking bed for {SOAK_TIME}min...[{int(remaining)}s remaining]", end='\r', flush=True)
+        sleep(0.2)
+    print(f"Heatsoaking bed for {SOAK_TIME}min...DONE"," "*20, flush=True)
 
 
 def collect_datapoint(index):
@@ -395,7 +396,7 @@ def measure():
                   flush=True)
             temps.update(collect_datapoint(index))
         index += 1
-        print('DONE', " "*20)
+        print('DONE', " "*20, flush=True)
         park_head_center()
     else:
         t_minus = ((last_measurement +
@@ -432,7 +433,9 @@ def main():
     if Z_THERMAL_ADJUST: send_gcode('SET_Z_THERMAL_ADJUST enable=0')
 
     # Take preheat mesh
+    print("Measuring cold mesh...", end='', flush=True)    
     take_bed_mesh()
+    print("DONE")    
     pre_time = datetime.now()
     pre_mesh = query_bed_mesh()
     pre_temps = query_temp_sensors()
@@ -441,23 +444,22 @@ def main():
                 'temps': pre_temps,
                 'mesh': pre_mesh}
 
+    print(f'Setting heater targets: Bed={BED_TEMPERATURE:.1f} degC; Tool={HE_TEMPERATURE:.1f} degC')
     set_bedtemp(BED_TEMPERATURE)
     set_hetemp(HE_TEMPERATURE)
 
     temps = {}
     # wait for heat soak
 
-    print("Parking toolhead at Z=%.1f mm for bed heating...", end='', flush=True)
     park_head_high()
     print("DONE", flush=True)
-    print(f"Waiting {SOAK_TIME}min for bed soak...", end='', flush=True)
-    wait_for_bedtemp(soak_time=SOAK_TIME)
-    print("DONE", flush=True)
+
+    heatsoak_bed()
 
     start_time = datetime.now()
 
     # Take cold mesh
-    print("Taking cold frame measurement...", end='', flush=True)
+    print("Measuring cold frame mesh...", end='', flush=True)
     take_bed_mesh()
     print("DONE", flush=True)
     cold_time = datetime.now()
@@ -468,17 +470,16 @@ def main():
                  'temps': cold_temps,
                  'mesh': cold_mesh}
 
-    print('Cold mesh taken, waiting for %s minutes' % (HOT_DURATION * 60))
+    print('Taking Z measurements for the next %s min.' % (HOT_DURATION * 60), flush=True)
 
-    while(1):
-        now = datetime.now()
-        if (now - start_time) >= timedelta(hours=HOT_DURATION):
-            break
+    while((datetime.now() - start_time) < timedelta(hours=HOT_DURATION)):
         measure()
         sleep(0.2)
 
     # Take hot mesh
+    print("Measuring hot mesh...", end='', flush=True)
     take_bed_mesh()
+    print("DONE", flush=True)
     hot_time = datetime.now()
     hot_mesh = query_bed_mesh()
     hot_temps = query_temp_sensors()
@@ -487,15 +488,10 @@ def main():
                 'temps': hot_temps,
                 'mesh': hot_mesh}
 
-    print('Hot mesh taken, writing to file')
-
     print('Hot measurements complete!')
     set_bedtemp()
 
-    while(1):
-        now = datetime.now()
-        if (now - start_time) >= timedelta(hours=HOT_DURATION+COOL_DURATION):
-            break
+    while((datetime.now() - start_time) < timedelta(hours=HOT_DURATION+COOL_DURATION)):
         measure()
         sleep(0.2)
 
@@ -506,13 +502,25 @@ def main():
               'hot_mesh': hot_data,
               'temp_data': temps}
 
+    print(f"Writing results to file {DATA_FILENAME}...", end='')
     with open(DATA_FILENAME, "w") as out_file:
         json.dump(output, out_file, indent=4, sort_keys=True, default=str)
+    print("DONE")
 
     set_bedtemp()
     set_hetemp()
     if Z_THERMAL_ADJUST: send_gcode('SET_Z_THERMAL_ADJUST enable=1')
-    print('Measurements complete!')
+    print('='*26, "ALL MEASUREMENTS COMPLETE!","="*26, sep='\n')
+
+
+def debug():
+    SOAK_TIME = 0.1
+    start_soak = datetime.now()
+    while(datetime.now() - start_soak < timedelta(minutes=SOAK_TIME)):
+        remaining = SOAK_TIME*60 - (datetime.now() - start_soak).seconds
+        print(f"Heatsoaking bed for {SOAK_TIME}min...[{int(remaining)}s remaining]", end='\r', flush=True)
+        sleep(0.2)
+    print(f"Heatsoaking bed for {SOAK_TIME}min...DONE"," "*20, flush=True)
 
 
 if __name__ == "__main__":
@@ -522,4 +530,4 @@ if __name__ == "__main__":
         set_bedtemp()
         set_hetemp()
         if Z_THERMAL_ADJUST: send_gcode('SET_Z_THERMAL_ADJUST enable=1')
-        print("\nAborted by user!")
+        print("\nAborted by user! Heaters disabled.")
