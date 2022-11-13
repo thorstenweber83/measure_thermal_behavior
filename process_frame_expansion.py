@@ -1,10 +1,10 @@
-from sys import argv
-from os import makedirs
 import json
 import numpy as np
-from numpy.lib.polynomial import polyval
 import pandas as pd
 from matplotlib import pyplot as plt
+from os import makedirs
+from pathlib import Path
+from sys import argv
 
 pd.options.mode.chained_assignment = None  # default='warn'
 PRINT_START_TIME = 10
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     args = argv[1:]
     # print(args)
     for arg in args:
-        dataset_name = arg.strip('.\\').removesuffix('.json')
+        dataset_name = Path(arg.strip('.\\')).with_suffix('')
         print("Analyzing file: %s" % dataset_name)
         results = read_results_file(arg)
         step_dist = results['metadata']['z_axis']['step_dist']
