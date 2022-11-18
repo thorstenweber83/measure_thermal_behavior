@@ -180,7 +180,7 @@ Finally, there are two processing scripts that can be run on the json results fi
 1. `process_meshes.py`, which will output plots pertaining to the bed mesh measurements
 
     E.g: `process_meshes.py thermal_quant_{}.json`.
-2. `process_frame_expansion.py`, which will output plots pertaining to thermal expansion measurements. Check `temp_coeff_fitting.png` to ensure a proper linear fit and the `temp_coeff` value for the `[frame_expansion_compensation]` configuration section.
+2. `process_frame_expansion.py`, which will output plots pertaining to thermal expansion measurements. Check `temp_coeff_fitting.png` to ensure a proper linear fit and the `temp_coeff` value for the `[z_thermal_adjust]` configuration section.
 
     E.g.: `process_frame_expansion.py thermal_quant_{}.json`
 
