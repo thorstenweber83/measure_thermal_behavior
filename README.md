@@ -77,7 +77,7 @@ EXTRA_SENSORS = {}
 #####################################
 ```
 
-Note that if you want to calculate your printers frame expansion coefficient, you will need to include a frame temperature sensor definition.
+**Note** that if you want to calculate your printers `temp_coeff` for the `z_thermal_adjust` module, you will need to have the config section defined - `temp_coeff` defaults to 0.0 mm/degC.
 
 If you haven't already, copy the modified `measure_thermal_behavior.py` to the Pi running Klipper/Moonraker.
 
