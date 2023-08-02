@@ -299,6 +299,7 @@ class Plotter():
         plt.close()
         self.plot_timeseries().savefig(dir/'timeseries.png')
         plt.close()
+        logger.info('All plots saved to:\n"%s"', dir.absolute())
 
 if __name__ == "__main__":
     from sys import argv
@@ -306,7 +307,7 @@ if __name__ == "__main__":
 
     arg = argv[1]
     dataset_name = Path(arg.strip('.\\')).with_suffix('')
-    print("Analyzing file: %s" % dataset_name)
+    logger.info('Analyzing file: "%s"', dataset_name)
 
     profile = ThermalProfile(arg)
     analysis = ThermalAnalysis(profile)
@@ -316,5 +317,4 @@ if __name__ == "__main__":
     output_path.mkdir(parents=True, exist_ok=True)
     profile.export_to_csv(output_path)
     profile.export_metadata_to_txt(output_path, 'metadata')
-    logger.info('Results output directory:\n "%s"', output_path.absolute())
     plotter.save_all_plots(output_path)
