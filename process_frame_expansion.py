@@ -85,12 +85,35 @@ class ThermalProfile():
             username = self.user_data['id']
             filename = f'metadata_{username}_{timestamp}'
         out_path = path/f"{filename}.txt"
-        with open(out_path, 'w') as outfile:
-            json.dump(self.metadata, outfile, indent=4)
+        self.metadata
+        
+        with open(out_path, 'w') as file:
+            file.write("----- Measurement Metadata -----\n\n")
+
+            # Write User Metadata
+            file.write("User:\n")
+            file.write(f"\tBackers: {self.metadata['user']['backers']}\n")
+            file.write(f"\tHome Type: {self.metadata['user']['home_type']}\n")
+            file.write(f"\tID: {self.metadata['user']['id']}\n")
+            file.write(f"\tPrinter: {self.metadata['user']['printer']}\n")
+            file.write(f"\tProbe Type: {self.metadata['user']['probe_type']}\n")
+            file.write(f"\tTimestamp: {self.metadata['user']['timestamp']}\n")
+            file.write(f"\tX Rails: {self.metadata['user']['x_rails']}\n\n")
+
+            # Write Z Axis Metadata
+            file.write("Z Axis:\n")
+            file.write(f"\tHoming Speed: {self.metadata['z_axis']['homing_speed']}\n")
+            file.write(f"\tMax Z: {self.metadata['z_axis']['max_z']}\n")
+            file.write(f"\tStep Distance: {self.metadata['z_axis']['step_dist']:.5e}\n\n")
+
+            # Write Script Metadata
+            file.write("Measurement Script:\n")
+            file.write(f"\tData Structure: {self.metadata['script']['data_structure']}\n")
+            file.write(f"\tHot Duration: {self.metadata['script']['hot_duration']}\n")
+
         logging.info('Exported thermal profile metadata to:\n"%s"',
                      out_path.absolute())
-        
-        
+
     @property
     def z_axis(self) -> dict:
         'Z-axis configuration metadata.'
@@ -161,17 +184,14 @@ class ThermalAnalysis():
             .rename(columns={'elapsed_min_mean': 'elapsed_min'})
         )
 
-        self._time_range = (15, max(self.mean_thermals['elapsed_min']))
-
-        self.filtered_thermals, self._m = self.fit_temp_coeff(
-            self.mean_thermals,
-            self._time_range)
+        self._time_range = [15, max(self.mean_thermals['elapsed_min'])]
+        self.filtered_thermals = self.mean_thermals
 
     def fit_temp_coeff(self, expansion_df: pd.DataFrame, 
                           elapsed_time_range: tuple = None) -> tuple:
         df = expansion_df
 
-        logger.info('Fitting temp_coeff..')
+        logger.debug('Fitting temp_coeff..')
         # Subset the dataset by elapsed time if provided
         if elapsed_time_range:
             logger.info('Using data points in time range: %.0f-%.0f min.',
@@ -203,6 +223,11 @@ class ThermalAnalysis():
                      '[bold italic]temp_coeff[/] = '
                      f'{(m * -1): .6f} mm/degC'), extra={"markup": True})
         return df, m
+    
+    def calculate(self):
+        self.filtered_thermals, self._m = self.fit_temp_coeff(
+            self.mean_thermals,
+            self._time_range)
 
     @property
     def mean_expansion_thermals(self) -> pd.DataFrame:
@@ -217,10 +242,24 @@ class ThermalAnalysis():
     @property
     def raw_profile(self) -> ThermalProfile:
         return self.profile
+    
+    @property
+    def fit_range(self) -> list:
+        return self._time_range
+    
+    @fit_range.setter
+    def fit_range(self, range):
+        self._time_range[0] = range[0] if (range[0] is not None) else self._time_range[0]
+        self._time_range[1] = range[1] if range[1] else self._time_range[1]
+        logger.debug('Fitting time range set to: %i-%i min.', *self._time_range)
+        self.calculate()
+
 
 class Plotter():
     def __init__(self, profile: ThermalAnalysis) -> None:
         self._thermal_analysis = profile
+        if not self._thermal_analysis._m:
+            self._thermal_analysis.calculate()
 
     def plot_timeseries(self, exclude_sensors=['he_temp', 'bed_temp']):
         df = self._thermal_analysis.mean_thermals
@@ -301,20 +340,32 @@ class Plotter():
         plt.close()
         logger.info('All plots saved to:\n"%s"', dir.absolute())
 
+desc_result_json = 'Path to thermal behaviour JSON results input file.'
+desc_fit_start = 'Exclude measurement points collected [bold]BEFORE[/] this time when fitting [italic]temp_coeff[/] [bold]\[minutes][/].'
+desc_fit_end = 'Exclude measurement points collected [bold]AFTER[/] this time when fitting [italic]temp_coeff[/] [bold]\[minutes][/].'
+
 if __name__ == "__main__":
-    from sys import argv
-    from os import makedirs
+    import argparse
+    from rich_argparse import RichHelpFormatter
+    logger.setLevel(logging.DEBUG)
 
-    arg = argv[1]
-    dataset_name = Path(arg.strip('.\\')).with_suffix('')
-    logger.info('Analyzing file: "%s"', dataset_name)
+    parser = argparse.ArgumentParser(formatter_class=RichHelpFormatter)
+    parser.add_argument('results_json', type=str, help=desc_result_json)
+    parser.add_argument('--start', type=int, required=False, default=None, 
+                        dest='fit_start_minutes', help=desc_fit_start)
+    parser.add_argument('--end', type=int, required=False, default=None,
+                        dest='fit_end_minutes', help=desc_fit_end)
+    args = parser.parse_args()
 
-    profile = ThermalProfile(arg)
+    dataset_name = Path(args.results_json.strip('.\\'))
+    profile = ThermalProfile(dataset_name)
     analysis = ThermalAnalysis(profile)
+    analysis.fit_range = [args.fit_start_minutes, args.fit_end_minutes]
     plotter = Plotter(analysis)
     
     output_path = Path(profile.user_id, profile.timestamp)
     output_path.mkdir(parents=True, exist_ok=True)
+
     profile.export_to_csv(output_path)
     profile.export_metadata_to_txt(output_path, 'metadata')
     plotter.save_all_plots(output_path)
