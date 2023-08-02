@@ -182,7 +182,7 @@ Finally, there are two processing scripts that can be run on the json results fi
     E.g: `process_meshes.py thermal_quant_{}.json`.
 2. `process_frame_expansion.py`, which will output plots pertaining to thermal expansion measurements. Check `coeff_fit_plot.png` to ensure a proper linear fit and the `temp_coeff` value for the `[z_thermal_adjust]` configuration section.
 
-    E.g.: `process_frame_expansion.py thermal_quant_{}.json`
+    E.g.: `python process_frame_expansion.py thermal_quant_{}.json`
 
 ### Running on the PC
 
