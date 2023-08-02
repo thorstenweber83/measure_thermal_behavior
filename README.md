@@ -184,8 +184,6 @@ Finally, there are two processing scripts that can be run on the json results fi
 
     E.g.: `process_frame_expansion.py thermal_quant_{}.json`
 
-You can include as many json-formatted datafiles as you want as positional arguments.
-
 ### Running on the PC
 
 To run on your PC, download the `thermal_quant_{}.json` results file. 
