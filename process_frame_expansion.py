@@ -337,7 +337,6 @@ class Plotter():
                      marker=None,
                      data=df,
                      alpha=0.8)
-        logger.debug("AX line XY1 = (%.3f, %.3f)", 0.0, yint)
         plt.axline(xy1=(0.0, yint),
                    slope=fit,
                    linestyle="--",
@@ -386,7 +385,6 @@ desc_fit_end = 'Exclude measurement points collected [bold]AFTER[/] this time wh
 if __name__ == "__main__":
     import argparse
     from rich_argparse import RichHelpFormatter
-    logger.setLevel(logging.DEBUG)
 
     parser = argparse.ArgumentParser(formatter_class=RichHelpFormatter)
     parser.add_argument('results_json', type=str, help=desc_result_json)
