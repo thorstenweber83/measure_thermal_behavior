@@ -5,6 +5,7 @@ from rich.logging import RichHandler
 import pandas as pd
 from numpy import polyfit, polyval
 from matplotlib import pyplot as plt
+from matplotlib.patches import Patch
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, 
@@ -222,10 +223,10 @@ class ThermalAnalysis():
         logger.info(('Calculated '
                      '[bold italic]temp_coeff[/] = '
                      f'{(m * -1): .6f} mm/degC'), extra={"markup": True})
-        return df, m
+        return df, m, c
     
     def calculate(self):
-        self.filtered_thermals, self._m = self.fit_temp_coeff(
+        self.filtered_thermals, self._m, self._c = self.fit_temp_coeff(
             self.mean_thermals,
             self._time_range)
 
@@ -238,7 +239,11 @@ class ThermalAnalysis():
         if self._m:
             return -1*self._m
         return None
-    
+
+    @property
+    def fit_c(self) -> float:
+        return self._c
+
     @property
     def raw_profile(self) -> ThermalProfile:
         return self.profile
@@ -258,13 +263,13 @@ class ThermalAnalysis():
 class Plotter():
     def __init__(self, profile: ThermalAnalysis) -> None:
         self._thermal_analysis = profile
-        if not self._thermal_analysis._m:
+        if not self._thermal_analysis.temp_coeff:
             self._thermal_analysis.calculate()
 
     def plot_timeseries(self, exclude_sensors=['he_temp', 'bed_temp']):
         df = self._thermal_analysis.mean_thermals
         user_data = self._thermal_analysis.raw_profile.user_data
-
+        fit_range = self._thermal_analysis.fit_range
         fig, host = plt.subplots(figsize=(8, 5), dpi=300)
         par1 = host.twinx()
 
@@ -273,6 +278,14 @@ class Plotter():
         par1.set_ylabel("Temperature [degC]")
 
         colour1 = "black"
+        
+        # Overlay fitting region
+        host.axvspan(fit_range[0],
+                     fit_range[1],
+                     color='gray', alpha=0.15,
+                     label='Fitting Region')
+        
+        # Plot delta Z
         host.plot(df['elapsed_min'], df['delta_z_mean'],
                         label='Delta Z', color=colour1,
                         zorder=4)
@@ -284,52 +297,78 @@ class Plotter():
                         #   fmt=".k",
                         #  ecolor='frame_temp',
                         )
+
+        # Add the text label "Fitting Region"
+        label_x_position = (fit_range[0] + fit_range[1]) / 2
+        label_y_position = host.get_ylim()[1] - 0.03 * (host.get_ylim()[1] - host.get_ylim()[0])
+        host.text(label_x_position, label_y_position, "temp_coeff Fitting Region", 
+              ha='center', va='top', fontsize=8, fontstyle='italic',
+              color='black',
+              bbox=dict(boxstyle='round,pad=1', ec='none', fill=False))
+
+        # Plot temperature sensor data
         for sensor in self._thermal_analysis.raw_profile._get_temp_columns():
             if sensor not in exclude_sensors:
                 par1.plot(df['elapsed_min'], df[sensor+'_mean'],
                             label=sensor)
 
         par1.legend(title='Temperature Sensors', bbox_to_anchor=(1.1,0.5), loc=2)
-        host.set_title(f"Frame Expansion Timeseries\n{user_data['id']} ({user_data['timestamp']})")
-        fig.set_facecolor('white')
-        fig.set_tight_layout(tight=True)
+        host.set_title(f"Frame Expansion Time Series\n{user_data['id']} ({user_data['timestamp']})")
+        fig.set_facecolor('white') # Plot background fill
+        fig.set_tight_layout(tight=True) # Keep legend within bounds of output
         return plt
 
-    def plot_coeff_fitting(self, df: pd.DataFrame = None, temp_coeff: float = None):
-        if not df:
-            df = self._thermal_analysis.filtered_thermals
-            if self._thermal_analysis.temp_coeff:
-                fit = self._thermal_analysis.temp_coeff * -1
-            else:
-                logger.error('Cannot plot temp_coeff without frame_temp data')
-                return None
+    def plot_coeff_fitting(self):
+        df = self._thermal_analysis.filtered_thermals
+        fit = self._thermal_analysis.temp_coeff * -1
+        yint = self._thermal_analysis._c
 
         plt.figure(1, (6, 6), dpi=300)
-        plt.scatter('delta_z_mean', 'frame_temp_mean', c='frame_temp_mean',
+        plt.scatter('frame_temp_mean', 'delta_z_mean', c='frame_temp_mean',
                     cmap='inferno', data=df,
                     zorder=4,
                     edgecolors="black",
                     alpha=0.8)
-        plt.errorbar('delta_z_mean',
-                     'frame_temp_mean',
-                     xerr=df['delta_z_sd'],
+        plt.errorbar('frame_temp_mean',
+                     'delta_z_mean',
+                     yerr=df['delta_z_sd'],
                      fmt=".k",
                      #  ecolor='frame_temp',
                      marker=None,
                      data=df,
                      alpha=0.8)
-        plt.axline((df['fit_delta_z'].min(),
-                    df['frame_temp_mean'].max()
-                    ),
-                   slope=1/fit,
+        logger.debug("AX line XY1 = (%.3f, %.3f)", 0.0, yint)
+        plt.axline(xy1=(0.0, yint),
+                   slope=fit,
                    linestyle="--",
                     c='black')
-        plt.title('%s\nFrame Expansion\nAll Measurement Data Points w/Fit' %
-                    self._thermal_analysis.raw_profile.user_data['id'])
-        plt.xlabel('Delta Z (Mean ± S.D.) [mm] ')
-        plt.ylabel('Frame Temperature [degC]')
-        plt.annotate(text="temp_coeff:\n%.4f mm/K" %
-                        (-1*fit), xy=(0.7, 0.8), xycoords='figure fraction')
+        title = ("%s\nTemperature Coefficient Fitting\n"
+                 "Time Range Subset: %i-%i min." %
+                    (self._thermal_analysis.raw_profile.user_id,
+                     *self._thermal_analysis.fit_range)) 
+        plt.title(title)
+       
+        # Adjust limits to avoid plotting the fit overlay Y-intercept point
+        xrange = df.frame_temp_mean.max() - df.frame_temp_mean.min()
+        yrange =  df.delta_z_mean.max() - df.delta_z_mean.min()
+        plt.xlim(df.frame_temp_mean.min() - xrange * 0.1,
+                 df.frame_temp_mean.max() + xrange * 0.1)
+        plt.ylim(df.delta_z_mean.min() - yrange * 0.1,
+                 (df.delta_z_mean + df.delta_z_sd).max() + yrange * 0.1)
+        
+        plt.xlabel('Frame Temperature [degC]')
+        plt.ylabel('Delta Z (Mean ± S.D.) [mm] ')
+
+        # Try to avoid plotting the temp_coeff overtop of data
+        coeff_annot_x = 0.2 if (fit > 0) else 0.9
+        plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*fit),
+                     xy=(coeff_annot_x, 0.85), xycoords='figure fraction',
+                     ha='left' if (fit > 0) else 'right',
+                     va='top',
+                     zorder=10,
+                     bbox=dict(boxstyle='square, pad=0.5', facecolor='white',
+                               edgecolor='black', alpha=0.7))
+        plt.tight_layout()
         return plt
 
     def save_all_plots(self, dir: Path):
