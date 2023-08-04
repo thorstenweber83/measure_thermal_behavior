@@ -5,8 +5,9 @@ from rich.logging import RichHandler
 import pandas as pd
 from numpy import polyfit, polyval
 from matplotlib import pyplot as plt
-from matplotlib.patches import Patch
 from pathlib import Path
+
+import ruptures as rpt
 
 logging.basicConfig(level=logging.INFO, 
                     format="%(message)s",
@@ -160,6 +161,8 @@ class ThermalAnalysis():
         self.raw_thermals = profile.raw_expansion_thermals
         self.profile = profile
         self._json_results = profile.json_results
+        self.breakpoints = None
+        self._manual_range = False
         
         # Calculate the mean and standard deviation of samples
         self.mean_thermals = (self.raw_thermals
@@ -185,7 +188,7 @@ class ThermalAnalysis():
             .rename(columns={'elapsed_min_mean': 'elapsed_min'})
         )
 
-        self._time_range = [15, max(self.mean_thermals['elapsed_min'])]
+        self._time_range = [0, max(self.mean_thermals['elapsed_min'])]
         self.filtered_thermals = self.mean_thermals
 
     def fit_temp_coeff(self, expansion_df: pd.DataFrame, 
@@ -193,12 +196,10 @@ class ThermalAnalysis():
         df = expansion_df
 
         logger.debug('Fitting temp_coeff..')
-        # Subset the dataset by elapsed time if provided
+
+        # Subset the dataset by elapsed time range
         if elapsed_time_range:
-            logger.info('Using data points in time range: %.0f-%.0f min.',
-                        self._time_range[0], self._time_range[1])
-            df = (
-                df.loc[df.elapsed_min >= min(elapsed_time_range)]
+            df = (df.loc[df.elapsed_min >= min(elapsed_time_range)]
                 .loc[df.elapsed_min <= max(elapsed_time_range)]
             )
 
@@ -226,9 +227,34 @@ class ThermalAnalysis():
         return df, m, c
     
     def calculate(self):
+        if not self._manual_range:
+            self.calc_breakpoints(self.mean_thermals)
+            # logger.debug('Breakpoint calculated: %s', self.breakpoints)
+            if self.breakpoints and len(self.breakpoints) <= 3:
+                self._time_range[0] = self.breakpoints[0]
+                self._time_range[1] = self.breakpoints[1]
+            logger.info('Fit range auto set to: %i-%i min.', *self._time_range)
+
         self.filtered_thermals, self._m, self._c = self.fit_temp_coeff(
             self.mean_thermals,
             self._time_range)
+
+    def calc_breakpoints(self, df: pd.DataFrame):
+        window_size = 30
+        values = df.delta_z_mean.values
+
+        print("Length of values array:", len(values))
+        print("Length of DataFrame df:", len(df))
+
+        algo = rpt.Window(width=window_size)
+        results = algo.fit_predict(values, n_bkps=2, pen=5)
+        # Subtract 1 from each index in the results list
+        results = [idx - 1 for idx in results]
+        print("Results:", results)
+
+        self.breakpoints = df.elapsed_min[results].tolist()
+        logger.debug('Breakpoints identified at points: %s,', self.breakpoints)
+        
 
     @property
     def mean_expansion_thermals(self) -> pd.DataFrame:
@@ -256,7 +282,9 @@ class ThermalAnalysis():
     def fit_range(self, range):
         self._time_range[0] = range[0] if (range[0] is not None) else self._time_range[0]
         self._time_range[1] = range[1] if range[1] else self._time_range[1]
-        logger.debug('Fitting time range set to: %i-%i min.', *self._time_range)
+        if any(range):
+            self._manual_range = True
+            logger.info('User fit range set to: %i-%i min.', *self._time_range)
         self.calculate()
 
 
@@ -282,9 +310,13 @@ class Plotter():
         # Overlay fitting region
         host.axvspan(fit_range[0],
                      fit_range[1],
-                     color='gray', alpha=0.15,
+                     color='gray', alpha=0.2,
                      label='Fitting Region')
         
+        # if not self._thermal_analysis._manual_range:
+            # for b in self._thermal_analysis.breakpoints:
+                # plt.axvline(x=b, color='gray', linestyle='--')
+
         # Plot delta Z
         host.plot(df['elapsed_min'], df['delta_z_mean'],
                         label='Delta Z', color=colour1,
@@ -313,7 +345,8 @@ class Plotter():
                             label=sensor)
 
         par1.legend(title='Temperature Sensors', bbox_to_anchor=(1.1,0.5), loc=2)
-        host.set_title(f"Frame Expansion Time Series\n{user_data['id']} ({user_data['timestamp']})")
+        title = f"{user_data['id']} ({user_data['timestamp']})\nFrame Expansion Time Series"
+        host.set_title(title)
         fig.set_facecolor('white') # Plot background fill
         fig.set_tight_layout(tight=True) # Keep legend within bounds of output
         return plt
@@ -322,6 +355,7 @@ class Plotter():
         df = self._thermal_analysis.filtered_thermals
         fit = self._thermal_analysis.temp_coeff * -1
         yint = self._thermal_analysis._c
+        user_data = self._thermal_analysis.raw_profile.user_data
 
         plt.figure(1, (6, 6), dpi=300)
         plt.scatter('frame_temp_mean', 'delta_z_mean', c='frame_temp_mean',
@@ -341,9 +375,10 @@ class Plotter():
                    slope=fit,
                    linestyle="--",
                     c='black')
-        title = ("%s\nTemperature Coefficient Fitting\n"
+        title = ("%s (%s)\nTemperature Coefficient Fitting\n"
                  "Time Range Subset: %i-%i min." %
-                    (self._thermal_analysis.raw_profile.user_id,
+                    (user_data['id'],
+                     user_data['timestamp'],
                      *self._thermal_analysis.fit_range)) 
         plt.title(title)
        
@@ -385,6 +420,7 @@ desc_fit_end = 'Exclude measurement points collected [bold]AFTER[/] this time wh
 if __name__ == "__main__":
     import argparse
     from rich_argparse import RichHelpFormatter
+    # logger.setLevel(logging.DEBUG)
 
     parser = argparse.ArgumentParser(formatter_class=RichHelpFormatter)
     parser.add_argument('results_json', type=str, help=desc_result_json)
