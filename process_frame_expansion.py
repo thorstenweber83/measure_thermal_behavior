@@ -419,7 +419,7 @@ class Plotter():
         plt.ylabel('Delta Z (Mean ± S.D.) [mm] ')
 
         # Try to avoid plotting the temp_coeff overtop of data
-        coeff_annot_x = 0.2 if (fit > 0) else 0.9
+        coeff_annot_x = 0.2 if (fit > 0) else 0.75
         plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*fit),
                      xy=(coeff_annot_x, 0.85), xycoords='figure fraction',
                      ha='left' if (fit > 0) else 'right',
@@ -428,7 +428,7 @@ class Plotter():
                      bbox=dict(boxstyle='square, pad=0.5', facecolor='white',
                                edgecolor='black', alpha=0.7))
         cbar = plt.colorbar()
-        cbar.set_label('Elapsed Time\n[min]')
+        cbar.set_label('Elapsed Time [min]')
         cbar.set_ticks(range(0, int(df_all.elapsed_min.max()), 10))
         plt.tight_layout()
         return plt
@@ -463,7 +463,7 @@ class Plotter():
                      user_data['timestamp'],
                      *self._thermal_analysis.fit_range)) 
         cbar = plt.colorbar()
-        cbar.set_label('Elapsed Time\n[min]')
+        cbar.set_label('Elapsed Time [min]')
         cbar.set_ticks(range(int(df.elapsed_min.min()),
                              int(df.elapsed_min.max()),
                              10))
