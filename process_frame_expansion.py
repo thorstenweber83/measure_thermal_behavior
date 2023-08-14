@@ -368,6 +368,71 @@ class Plotter():
         fig.set_tight_layout(tight=True) # Keep legend within bounds of output
         return plt
 
+    def plot_coeff_fitting_context(self):
+        df = self._thermal_analysis.filtered_thermals
+        df_all = self._thermal_analysis.mean_thermals
+        fit = self._thermal_analysis.temp_coeff * -1
+        yint = self._thermal_analysis._c
+        user_data = self._thermal_analysis.raw_profile.user_data
+
+        plt.figure(1, (6, 6), dpi=300)
+        plt.scatter('frame_temp_mean', 'delta_z_mean', c='grey',
+                    data=self._thermal_analysis.mean_thermals,
+                    zorder=4,
+                    # edgecolors="black",
+                    label='Unused/Filtered Points',
+                    alpha=0.5)
+        plt.scatter('frame_temp_mean', 'delta_z_mean', c='elapsed_min',
+                    cmap='viridis', data=df,
+                    zorder=4,
+                    edgecolors="black",
+                    label='Fitting Point',
+                    alpha=0.8)
+        plt.errorbar('frame_temp_mean',
+                     'delta_z_mean',
+                     yerr=df['delta_z_sd'],
+                     fmt=".k",
+                     #  ecolor='frame_temp',
+                     marker=None,
+                     data=df,
+                     alpha=0.8)
+        plt.axline(xy1=(0.0, yint),
+                   slope=fit,
+                   linestyle="--",
+                    c='black')
+        title = ("%s (%s)\nTemperature Coefficient Fitting\n"
+                 "All Data Points (Unused/Removed Points in Grey)" %
+                    (user_data['id'],
+                     user_data['timestamp']
+                     )) 
+        plt.title(title)
+       
+        # Adjust limits to avoid plotting the fit overlay Y-intercept point
+        xrange = df_all.frame_temp_mean.max() - df_all.frame_temp_mean.min()
+        yrange =  df_all.delta_z_mean.max() - df_all.delta_z_mean.min()
+        plt.xlim(df_all.frame_temp_mean.min() - xrange * 0.1,
+                 df_all.frame_temp_mean.max() + xrange * 0.1)
+        plt.ylim(df_all.delta_z_mean.min() - yrange * 0.1,
+                 (df_all.delta_z_mean + df_all.delta_z_sd).max() + yrange * 0.1)
+        
+        plt.xlabel('Frame Temperature [degC]')
+        plt.ylabel('Delta Z (Mean ± S.D.) [mm] ')
+
+        # Try to avoid plotting the temp_coeff overtop of data
+        coeff_annot_x = 0.2 if (fit > 0) else 0.9
+        plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*fit),
+                     xy=(coeff_annot_x, 0.85), xycoords='figure fraction',
+                     ha='left' if (fit > 0) else 'right',
+                     va='top',
+                     zorder=10,
+                     bbox=dict(boxstyle='square, pad=0.5', facecolor='white',
+                               edgecolor='black', alpha=0.7))
+        cbar = plt.colorbar()
+        cbar.set_label('Elapsed Time\n[min]')
+        cbar.set_ticks(range(0, int(df_all.elapsed_min.max()), 10))
+        plt.tight_layout()
+        return plt
+
     def plot_coeff_fitting(self):
         df = self._thermal_analysis.filtered_thermals
         fit = self._thermal_analysis.temp_coeff * -1
@@ -375,8 +440,8 @@ class Plotter():
         user_data = self._thermal_analysis.raw_profile.user_data
 
         plt.figure(1, (6, 6), dpi=300)
-        plt.scatter('frame_temp_mean', 'delta_z_mean', c='frame_temp_mean',
-                    cmap='inferno', data=df,
+        plt.scatter('frame_temp_mean', 'delta_z_mean', c='elapsed_min',
+                    cmap='viridis', data=df,
                     zorder=4,
                     edgecolors="black",
                     alpha=0.8)
@@ -397,6 +462,11 @@ class Plotter():
                     (user_data['id'],
                      user_data['timestamp'],
                      *self._thermal_analysis.fit_range)) 
+        cbar = plt.colorbar()
+        cbar.set_label('Elapsed Time\n[min]')
+        cbar.set_ticks(range(int(df.elapsed_min.min()),
+                             int(df.elapsed_min.max()),
+                             10))
         plt.title(title)
        
         # Adjust limits to avoid plotting the fit overlay Y-intercept point
@@ -411,7 +481,7 @@ class Plotter():
         plt.ylabel('Delta Z (Mean ± S.D.) [mm] ')
 
         # Try to avoid plotting the temp_coeff overtop of data
-        coeff_annot_x = 0.2 if (fit > 0) else 0.9
+        coeff_annot_x = 0.2 if (fit > 0) else 0.75
         plt.annotate(text="temp_coeff:\n%.4f mm/K" % (-1*fit),
                      xy=(coeff_annot_x, 0.85), xycoords='figure fraction',
                      ha='left' if (fit > 0) else 'right',
@@ -427,6 +497,8 @@ class Plotter():
         self.plot_coeff_fitting().savefig(dir/'coeff_fit_plot.png')
         plt.close()
         self.plot_timeseries().savefig(dir/'timeseries.png')
+        plt.close()
+        self.plot_coeff_fitting_context().savefig(dir/'coff_fit_context_plot.png')
         plt.close()
         logger.info('All plots saved to:\n"%s"', dir.absolute())
 
