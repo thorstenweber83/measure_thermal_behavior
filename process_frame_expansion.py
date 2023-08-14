@@ -163,6 +163,7 @@ class ThermalAnalysis():
         self._json_results = profile.json_results
         self.breakpoints = None
         self._manual_range = False
+        self._delta_z_sd_cutoff = None
         
         # Calculate the mean and standard deviation of samples
         self.mean_thermals = (self.raw_thermals
@@ -190,6 +191,7 @@ class ThermalAnalysis():
 
         self._time_range = [0, max(self.mean_thermals['elapsed_min'])]
         self.filtered_thermals = self.mean_thermals
+        logger.debug('Max delta Z SD = %f', self.mean_thermals.delta_z_sd.max())
 
     def fit_temp_coeff(self, expansion_df: pd.DataFrame, 
                           elapsed_time_range: tuple = None) -> tuple:
@@ -227,8 +229,10 @@ class ThermalAnalysis():
         return df, m, c
     
     def calculate(self):
+        self.filtered_thermals = self.filter_std(self.filtered_thermals,
+                                                self._delta_z_sd_cutoff)
         if not self._manual_range:
-            self.calc_breakpoints(self.mean_thermals)
+            self.calc_breakpoints(self.filtered_thermals)
             # logger.debug('Breakpoint calculated: %s', self.breakpoints)
             if len(self.breakpoints) >= 2:
                 self._time_range[0] = self.breakpoints[0]
@@ -236,23 +240,25 @@ class ThermalAnalysis():
                 logger.info('Fit range auto set to: %i-%i min.', *self._time_range)
             elif len(self.breakpoints) == 1:
                 logger.info('Could not auto set time range. Using full dataset')
-
         self.filtered_thermals, self._m, self._c = self.fit_temp_coeff(
-            self.mean_thermals,
+            self.filtered_thermals,
             self._time_range)
 
     def calc_breakpoints(self, df: pd.DataFrame):
         window_size = 30
         values = df.delta_z_mean.values
 
-        print("Length of values array:", len(values))
-        print("Length of DataFrame df:", len(df))
-
         algo = rpt.Window(width=window_size)
         results = algo.fit_predict(values, n_bkps=2, pen=5)
         results = [idx - 1 for idx in results] # 0-index results
-        self.breakpoints = df.elapsed_min[results].tolist()
-        logger.debug('Breakpoints identified at: %s,', self.breakpoints)
+        self.breakpoints = df['elapsed_min'].iloc[results].tolist()
+        logger.debug('Breakpoints identified at: %s min,', self.breakpoints)
+
+    def filter_std(self, df: pd.DataFrame, cutoff: float = 0.05):
+        subset = df.loc[df['delta_z_sd'] <= cutoff]
+        logger.info('Filtered out %i data points by delta_z SD <= %f mm',
+                     (len(df)-len(subset)), cutoff)
+        return subset
 
     @property
     def mean_expansion_thermals(self) -> pd.DataFrame:
@@ -284,6 +290,19 @@ class ThermalAnalysis():
             self._manual_range = True
             logger.info('User fit range set to: %i-%i min.', *self._time_range)
         self.calculate()
+
+    @property
+    def delta_z_sd_cutoff(self) -> float:
+        return self._delta_z_sd_cutoff
+    
+    @delta_z_sd_cutoff.setter
+    def delta_z_sd_cutoff(self, cutoff: float):
+        if cutoff <= 0.:
+            logger.error('Delta Z SD cutoff must be > 0.0 mm. Using default (0.05 mm).')
+            self._delta_z_sd_cutoff = 0.05
+        else:
+            logger.debug('Delta Z cutoff set to: %f mm', cutoff)
+            self._delta_z_sd_cutoff = cutoff
 
 
 class Plotter():
@@ -414,7 +433,7 @@ class Plotter():
 desc_result_json = 'Path to thermal behaviour JSON results input file.'
 desc_fit_start = 'Exclude measurement points collected [bold]BEFORE[/] this time when fitting [italic]temp_coeff[/] [bold]\[minutes][/].'
 desc_fit_end = 'Exclude measurement points collected [bold]AFTER[/] this time when fitting [italic]temp_coeff[/] [bold]\[minutes][/].'
-
+desc_sd_cutoff = 'Standard deviation cutoff for delta_z data point filter. Default = 0.05. [bold]\[mm][/]'
 if __name__ == "__main__":
     import argparse
     from rich_argparse import RichHelpFormatter
@@ -426,11 +445,19 @@ if __name__ == "__main__":
                         dest='fit_start_minutes', help=desc_fit_start)
     parser.add_argument('--end', type=int, required=False, default=None,
                         dest='fit_end_minutes', help=desc_fit_end)
+    parser.add_argument('--sd_cutoff', type=float, required=False, default=0.05,
+                        dest='sd_cutoff', help=desc_sd_cutoff)
+    parser.add_argument('-v', '--verbose', action='count', required=False, default=0,
+                        dest='verbose')
     args = parser.parse_args()
+
+    if(args.verbose > 0):
+        logger.setLevel(logging.DEBUG)
 
     dataset_name = Path(args.results_json.strip('.\\'))
     profile = ThermalProfile(dataset_name)
     analysis = ThermalAnalysis(profile)
+    analysis.delta_z_sd_cutoff = args.sd_cutoff
     analysis.fit_range = [args.fit_start_minutes, args.fit_end_minutes]
     plotter = Plotter(analysis)
     
