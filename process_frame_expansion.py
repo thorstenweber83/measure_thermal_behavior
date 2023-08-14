@@ -230,10 +230,12 @@ class ThermalAnalysis():
         if not self._manual_range:
             self.calc_breakpoints(self.mean_thermals)
             # logger.debug('Breakpoint calculated: %s', self.breakpoints)
-            if self.breakpoints and len(self.breakpoints) <= 3:
+            if len(self.breakpoints) >= 2:
                 self._time_range[0] = self.breakpoints[0]
                 self._time_range[1] = self.breakpoints[1]
-            logger.info('Fit range auto set to: %i-%i min.', *self._time_range)
+                logger.info('Fit range auto set to: %i-%i min.', *self._time_range)
+            elif len(self.breakpoints) == 1:
+                logger.info('Could not auto set time range. Using full dataset')
 
         self.filtered_thermals, self._m, self._c = self.fit_temp_coeff(
             self.mean_thermals,
@@ -248,13 +250,9 @@ class ThermalAnalysis():
 
         algo = rpt.Window(width=window_size)
         results = algo.fit_predict(values, n_bkps=2, pen=5)
-        # Subtract 1 from each index in the results list
-        results = [idx - 1 for idx in results]
-        print("Results:", results)
-
+        results = [idx - 1 for idx in results] # 0-index results
         self.breakpoints = df.elapsed_min[results].tolist()
-        logger.debug('Breakpoints identified at points: %s,', self.breakpoints)
-        
+        logger.debug('Breakpoints identified at: %s,', self.breakpoints)
 
     @property
     def mean_expansion_thermals(self) -> pd.DataFrame:
